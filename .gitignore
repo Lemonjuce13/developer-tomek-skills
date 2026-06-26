@@ -9,5 +9,6 @@ dist/
 
 #dev
 #inputs from transcribed reels
+posts/*
 example*.ts
 example*.json
