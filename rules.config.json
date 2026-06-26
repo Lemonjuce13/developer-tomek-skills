@@ -4,6 +4,11 @@
     "assertion-functions-flat-narrowing": true,
     "satisfies-as-const-config": true,
     "type-safe-api-contract": true,
-    "native-type-predicate-guards": true
+    "native-type-predicate-guards": true,
+    "result-type-error-handling": true,
+    "type-safe-event-emitter": true,
+    "tuple-wrapped-conditional-types": true,
+    "phantom-types-state-safety": true,
+    "const-type-parameters": true
   }
 }
