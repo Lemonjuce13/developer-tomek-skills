@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   getDataHome,
@@ -36,6 +37,27 @@ const hasFlag = (flag: string): boolean => args.includes(flag);
 const flagValue = (prefix: string): string | undefined =>
   args.find((a) => a.startsWith(prefix))?.slice(prefix.length);
 
+/** Absolute path to this running compiled CLI entry (…/dist/cli.js). */
+const SELF_PATH = fileURLToPath(import.meta.url);
+
+/**
+ * Decide whether to register the locally-built entry or the published npx package.
+ * Auto-detected: an installed/npx copy lives under node_modules, a source clone does
+ * not. Overridable with --local (force the built dist path) or --npx (force the package).
+ */
+function isLocalInstall(): boolean {
+  if (hasFlag("--npx")) return false;
+  if (hasFlag("--local")) return true;
+  return !SELF_PATH.includes(`${path.sep}node_modules${path.sep}`);
+}
+
+/** The `serve` invocation to register: locally-built entry vs published npx package. */
+function serveInvocation(local: boolean): string[] {
+  return local
+    ? ["node", SELF_PATH, "serve"]
+    : ["npx", "-y", "tomek-rules-mcp", "serve"];
+}
+
 // ---------------------------------------------------------------------------
 // Usage
 // ---------------------------------------------------------------------------
@@ -60,6 +82,9 @@ Init flags (non-interactive / headless):
   --project            Install into the project's .claude/skills (default)
   --global             Install into ~/.claude/skills
   --yes                Register the MCP server without prompting
+  --local              Register the locally-built entry (node dist/cli.js serve)
+  --npx                Register the published package (npx -y tomek-rules-mcp serve)
+                       (default: auto-detected from where this CLI is running)
 
 Examples:
   npx tomek-rules-mcp
@@ -95,17 +120,17 @@ function seedDataHome(): void {
  * chosen skill scope: "global" → `--scope user` (available in all of your projects),
  * "project" → the CLI default (local, this project only).
  */
-function mcpCmdParts(scope: "project" | "global"): string[] {
+function mcpCmdParts(scope: "project" | "global", local: boolean): string[] {
   const scopeArgs = scope === "global" ? ["--scope", "user"] : [];
-  return ["claude", "mcp", "add", "tomek-rules", ...scopeArgs, "--", "npx", "-y", "tomek-rules-mcp", "serve"];
+  return ["claude", "mcp", "add", "tomek-rules", ...scopeArgs, "--", ...serveInvocation(local)];
 }
 
-function mcpCmdString(scope: "project" | "global"): string {
-  return mcpCmdParts(scope).join(" ");
+function mcpCmdString(scope: "project" | "global", local: boolean): string {
+  return mcpCmdParts(scope, local).join(" ");
 }
 
-function attemptMcpRegistration(scope: "project" | "global"): void {
-  const parts = mcpCmdParts(scope);
+function attemptMcpRegistration(scope: "project" | "global", local: boolean): void {
+  const parts = mcpCmdParts(scope, local);
   const cmdString = parts.join(" ");
   console.log(`\nRunning: ${cmdString}\n`);
   try {
@@ -210,9 +235,10 @@ async function runInitHeadless(opts: {
   skills: string[];
   scope: "project" | "global";
   registerMcp: boolean;
+  local: boolean;
 }): Promise<void> {
   const { syncSkill } = await import("./sync.js");
-  const { skills, scope, registerMcp } = opts;
+  const { skills, scope, registerMcp, local } = opts;
 
   seedDataHome();
 
@@ -233,10 +259,10 @@ async function runInitHeadless(opts: {
     installedSkills.push(SKILL_CONFIG);
   }
 
-  console.log(`\nMCP registration command:\n  ${mcpCmdString(scope)}\n`);
+  console.log(`\nMCP registration command:\n  ${mcpCmdString(scope, local)}\n`);
 
   if (registerMcp) {
-    attemptMcpRegistration(scope);
+    attemptMcpRegistration(scope, local);
   }
 
   printSuccess({ scope, installedSkills, skillsDir });
@@ -246,7 +272,7 @@ async function runInitHeadless(opts: {
 // init — interactive path (@clack/prompts)
 // ---------------------------------------------------------------------------
 
-async function runInitInteractive(): Promise<void> {
+async function runInitInteractive(local: boolean): Promise<void> {
   const clack = await import("@clack/prompts");
   const { syncSkill } = await import("./sync.js");
 
@@ -289,7 +315,7 @@ async function runInitInteractive(): Promise<void> {
 
   // 3. Register MCP now?
   const registerAnswer = await clack.confirm({
-    message: `Register the MCP server with Claude Code now?\n  (runs: ${mcpCmdString(scope)})`,
+    message: `Register the MCP server with Claude Code now?\n  (runs: ${mcpCmdString(scope, local)})`,
     initialValue: true,
   });
 
@@ -320,10 +346,10 @@ async function runInitInteractive(): Promise<void> {
     installedSkills.push(SKILL_CONFIG);
   }
 
-  clack.note(mcpCmdString(scope), "MCP registration command");
+  clack.note(mcpCmdString(scope, local), "MCP registration command");
 
   if (registerMcp) {
-    attemptMcpRegistration(scope);
+    attemptMcpRegistration(scope, local);
   }
 
   clack.outro("Installation complete!");
@@ -347,9 +373,14 @@ async function runInit(): Promise<void> {
   const yesFlag = hasFlag("--yes");
   const anyFlag = allFlag || skillsFlag !== undefined || projectFlag || globalFlag || yesFlag;
 
-  // Prompt only when we can (a real terminal) and the user didn't pass flags.
+  // Register the locally-built entry when run from a clone, the npx package otherwise
+  // (auto-detected, overridable with --local / --npx). --local/--npx are not install
+  // flags, so they don't by themselves force the non-interactive path.
+  const local = isLocalInstall();
+
+  // Prompt only when we can (a real terminal) and the user didn't pass install flags.
   if (process.stdin.isTTY && !anyFlag) {
-    await runInitInteractive();
+    await runInitInteractive(local);
     return;
   }
 
@@ -364,7 +395,7 @@ async function runInit(): Promise<void> {
   const scope: "project" | "global" = globalFlag ? "global" : "project";
   const registerMcp = yesFlag || !anyFlag;
 
-  await runInitHeadless({ skills, scope, registerMcp });
+  await runInitHeadless({ skills, scope, registerMcp, local });
 }
 
 async function main(): Promise<void> {
