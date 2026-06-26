@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Rule } from "./schema.js";
-import { SKILL_APPLY, getBundledSkillsDir } from "./paths.js";
+import { SKILL_APPLY, getBundledSkillsDir, getApplySkillDir, getDataHome } from "./paths.js";
 import { getActiveRules, getVersion } from "./registry.js";
 import { ruleToMarkdown } from "./markdown.js";
 
@@ -89,4 +89,51 @@ export function syncSkill(skillRoot?: string): {
   fs.writeFileSync(skillMdPath, renderSkillMd(activeRules, getVersion()), "utf-8");
 
   return { skillRoot: root, ruleFiles, skillMdPath };
+}
+
+/** Stamp file recording which registry `version` the installed skills currently reflect. */
+function syncStampPath(): string {
+  return path.join(getDataHome(), ".sync-stamp");
+}
+
+/**
+ * Self-sync: regenerate the *installed* apply skill(s) when the registry's content
+ * `version` has changed since the last run, then record the new version. This is what
+ * makes the skill auto-update — a session start (or any `serve`) after the content
+ * version is bumped refreshes the on-disk skill with no manual `sync`.
+ *
+ * Deliberately conservative: it only refreshes skill scopes that already exist (it never
+ * installs new ones or touches the read-only bundled package dir), and it is idempotent —
+ * a no-op when the version is unchanged.
+ */
+export function selfSync(): {
+  synced: boolean;
+  version: string;
+  previous: string | null;
+  scopes: string[];
+} {
+  const version = getVersion();
+  const stamp = syncStampPath();
+  const previous = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf-8").trim() : null;
+
+  if (previous === version) {
+    return { synced: false, version, previous, scopes: [] };
+  }
+
+  const scopes: string[] = [];
+  for (const scope of ["project", "global"] as const) {
+    const dir = getApplySkillDir(scope);
+    if (!fs.existsSync(dir)) continue; // only refresh already-installed scopes
+    try {
+      syncSkill(dir);
+      if (!scopes.includes(dir)) scopes.push(dir);
+    } catch {
+      // Skip unwritable scopes.
+    }
+  }
+
+  fs.mkdirSync(getDataHome(), { recursive: true });
+  fs.writeFileSync(stamp, version, "utf-8");
+
+  return { synced: true, version, previous, scopes };
 }
