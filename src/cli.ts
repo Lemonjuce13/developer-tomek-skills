@@ -90,25 +90,26 @@ function seedDataHome(): void {
 // MCP registration
 // ---------------------------------------------------------------------------
 
-const MCP_CMD_PARTS = [
-  "claude",
-  "mcp",
-  "add",
-  "tomek-rules",
-  "--",
-  "npx",
-  "-y",
-  "tomek-rules-mcp",
-  "serve",
-];
-const MCP_CMD_STRING = MCP_CMD_PARTS.join(" ");
+/**
+ * Build the `claude mcp add` argv, matching the MCP server's registration scope to the
+ * chosen skill scope: "global" → `--scope user` (available in all of your projects),
+ * "project" → the CLI default (local, this project only).
+ */
+function mcpCmdParts(scope: "project" | "global"): string[] {
+  const scopeArgs = scope === "global" ? ["--scope", "user"] : [];
+  return ["claude", "mcp", "add", "tomek-rules", ...scopeArgs, "--", "npx", "-y", "tomek-rules-mcp", "serve"];
+}
 
-function attemptMcpRegistration(): void {
-  console.log(`\nRunning: ${MCP_CMD_STRING}\n`);
+function mcpCmdString(scope: "project" | "global"): string {
+  return mcpCmdParts(scope).join(" ");
+}
+
+function attemptMcpRegistration(scope: "project" | "global"): void {
+  const parts = mcpCmdParts(scope);
+  const cmdString = parts.join(" ");
+  console.log(`\nRunning: ${cmdString}\n`);
   try {
-    const result = spawnSync(MCP_CMD_PARTS[0]!, MCP_CMD_PARTS.slice(1), {
-      stdio: "inherit",
-    });
+    const result = spawnSync(parts[0]!, parts.slice(1), { stdio: "inherit" });
     if (result.error) {
       const err = result.error as NodeJS.ErrnoException;
       if (err.code === "ENOENT") {
@@ -116,11 +117,11 @@ function attemptMcpRegistration(): void {
           "  `claude` CLI not found. Run the command above manually once Claude Code is installed."
         );
       } else {
-        console.log(`  Registration failed (${err.message}). Run manually:\n  ${MCP_CMD_STRING}`);
+        console.log(`  Registration failed (${err.message}). Run manually:\n  ${cmdString}`);
       }
     }
   } catch (e) {
-    console.log(`  Unexpected error. Run manually:\n  ${MCP_CMD_STRING}`);
+    console.log(`  Unexpected error. Run manually:\n  ${cmdString}`);
   }
 }
 
@@ -232,10 +233,10 @@ async function runInitHeadless(opts: {
     installedSkills.push(SKILL_CONFIG);
   }
 
-  console.log(`\nMCP registration command:\n  ${MCP_CMD_STRING}\n`);
+  console.log(`\nMCP registration command:\n  ${mcpCmdString(scope)}\n`);
 
   if (registerMcp) {
-    attemptMcpRegistration();
+    attemptMcpRegistration(scope);
   }
 
   printSuccess({ scope, installedSkills, skillsDir });
@@ -288,7 +289,7 @@ async function runInitInteractive(): Promise<void> {
 
   // 3. Register MCP now?
   const registerAnswer = await clack.confirm({
-    message: `Register the MCP server with Claude Code now?\n  (runs: ${MCP_CMD_STRING})`,
+    message: `Register the MCP server with Claude Code now?\n  (runs: ${mcpCmdString(scope)})`,
     initialValue: true,
   });
 
@@ -319,10 +320,10 @@ async function runInitInteractive(): Promise<void> {
     installedSkills.push(SKILL_CONFIG);
   }
 
-  clack.note(MCP_CMD_STRING, "MCP registration command");
+  clack.note(mcpCmdString(scope), "MCP registration command");
 
   if (registerMcp) {
-    attemptMcpRegistration();
+    attemptMcpRegistration(scope);
   }
 
   clack.outro("Installation complete!");
