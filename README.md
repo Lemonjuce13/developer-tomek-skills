@@ -40,21 +40,26 @@ rules.config.json ┘        │                 set_rules_enabled / apply-tomek
 - Node.js **≥ 18**
 - [Claude Code](https://claude.com/claude-code) (for the `claude mcp add` step / skills)
 
-## Quick start (npx)
+## Quick start (one command)
 
 ```bash
-npx tomek-rules-mcp init
+npx tomek-rules-mcp
 ```
 
-The interactive installer asks which skills to install (`tomek-rules`, `tomek-rules-config`)
-and whether to install them for the current project or globally, seeds your data home
-(`~/.tomek-rules`), generates the skill files, and offers to register the MCP server.
+That's it. This single command installs both skills (`tomek-rules`, `tomek-rules-config`),
+seeds your data home (`~/.tomek-rules`), generates the skill files, and registers the MCP
+server with Claude Code. In a terminal it walks you through a couple of choices (scope,
+confirm registration); when piped or scripted it falls back to sensible defaults (both
+skills, project scope, auto-register) so it still completes in one shot.
 
-Headless / scripted:
+Fully non-interactive / scripted:
 
 ```bash
-npx tomek-rules-mcp init --all --project --yes
+npx tomek-rules-mcp --all --global --yes
 ```
+
+After it finishes, restart (or reload) Claude Code so it picks up the new MCP server and
+skills.
 
 ## Manual / local-dev setup
 

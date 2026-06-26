@@ -45,23 +45,25 @@ function printUsage(): void {
 tomek-rules-mcp — MCP server + Claude skills for @developertomek's TypeScript idioms
 
 Usage:
+  npx tomek-rules-mcp            Install everything (skills + MCP server) — one command
   tomek-rules-mcp <command> [flags]
 
 Commands:
+  (no command)         Run the installer (same as 'init')
+  init [flags]         Install skills, seed the data home, and register the MCP server
   serve                Start the MCP server (used by Claude Code)
   sync                 Regenerate apply-skill files from the live rule registry
-  init [flags]         Install skills and register the MCP server
 
 Init flags (non-interactive / headless):
   --all                Install both skills (apply + config)
   --skills=apply,config  Comma-separated list of skills to install
   --project            Install into the project's .claude/skills (default)
   --global             Install into ~/.claude/skills
-  --yes                Skip the MCP-registration prompt; print the command instead
+  --yes                Register the MCP server without prompting
 
 Examples:
-  npx tomek-rules-mcp init
-  npx tomek-rules-mcp init --all --global --yes
+  npx tomek-rules-mcp
+  npx tomek-rules-mcp --all --global --yes
   npx tomek-rules-mcp sync
 `);
 }
@@ -331,7 +333,45 @@ async function runInitInteractive(): Promise<void> {
 // Main dispatch
 // ---------------------------------------------------------------------------
 
+/**
+ * Run the installer. Interactive when a TTY is present and no flags were passed;
+ * otherwise headless with sensible defaults so a bare, piped, or scripted
+ * `npx tomek-rules-mcp` still installs everything in one shot.
+ */
+async function runInit(): Promise<void> {
+  const allFlag = hasFlag("--all");
+  const skillsFlag = flagValue("--skills=");
+  const projectFlag = hasFlag("--project");
+  const globalFlag = hasFlag("--global");
+  const yesFlag = hasFlag("--yes");
+  const anyFlag = allFlag || skillsFlag !== undefined || projectFlag || globalFlag || yesFlag;
+
+  // Prompt only when we can (a real terminal) and the user didn't pass flags.
+  if (process.stdin.isTTY && !anyFlag) {
+    await runInitInteractive();
+    return;
+  }
+
+  // Headless defaults: install both skills into the project scope and register the
+  // MCP server. A bare non-interactive run is treated as "set everything up".
+  let skills: string[];
+  if (skillsFlag !== undefined && skillsFlag.length > 0) {
+    skills = skillsFlag.split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    skills = ["apply", "config"];
+  }
+  const scope: "project" | "global" = globalFlag ? "global" : "project";
+  const registerMcp = yesFlag || !anyFlag;
+
+  await runInitHeadless({ skills, scope, registerMcp });
+}
+
 async function main(): Promise<void> {
+  if (hasFlag("--help") || hasFlag("-h") || command === "help") {
+    printUsage();
+    return;
+  }
+
   switch (command) {
     case "serve": {
       const { serve } = await import("./index.js");
@@ -344,40 +384,18 @@ async function main(): Promise<void> {
       break;
     }
 
+    // Bare `npx tomek-rules-mcp` (no command) runs the full installer — one command
+    // installs both skills, seeds the data home, and registers the MCP server.
+    case "":
     case "init": {
-      // Determine if we're running headless (any relevant flag present)
-      const allFlag = hasFlag("--all");
-      const skillsFlag = flagValue("--skills=");
-      const projectFlag = hasFlag("--project");
-      const globalFlag = hasFlag("--global");
-      const yesFlag = hasFlag("--yes");
-
-      const isHeadless = allFlag || skillsFlag !== undefined || projectFlag || globalFlag || yesFlag;
-
-      if (isHeadless) {
-        // Parse skills
-        let skills: string[];
-        if (allFlag) {
-          skills = ["apply", "config"];
-        } else if (skillsFlag !== undefined && skillsFlag.length > 0) {
-          skills = skillsFlag.split(",").map((s) => s.trim()).filter(Boolean);
-        } else {
-          // Default: both
-          skills = ["apply", "config"];
-        }
-
-        const scope: "project" | "global" = globalFlag ? "global" : "project";
-        const registerMcp = yesFlag;
-
-        await runInitHeadless({ skills, scope, registerMcp });
-      } else {
-        await runInitInteractive();
-      }
+      await runInit();
       break;
     }
 
     default: {
+      console.error(`tomek-rules-mcp: unknown command "${command}".\n`);
       printUsage();
+      process.exitCode = 1;
       break;
     }
   }
