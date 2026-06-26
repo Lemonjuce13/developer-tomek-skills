@@ -1,5 +1,5 @@
 {
-  "version": "2025-12-01T00:00:00Z",
+  "version": "2026-06-26T00:00:00Z",
   "rules": [
     {
       "id": "interface-vs-type-architecture",
@@ -49,6 +49,77 @@
       ],
       "tags": ["asserts", "assertion-functions", "type-narrowing", "guards", "type-predicates"],
       "source": "https://www.instagram.com/p/DZ7_r_DREnj/"
+    },
+    {
+      "id": "satisfies-as-const-config",
+      "category": "types",
+      "title": "Lock down config objects with `as const satisfies` — validated and literal",
+      "difficulty": "intermediate",
+      "explanation": "Typing a config object with an explicit interface annotation widens its literal values into primitives (e.g. \"blue\" becomes string), killing downstream autocomplete and narrowing. Using `as const` alone preserves the literals and immutability but performs no structural validation, so typos and missing keys slip through. Combining them — `as const satisfies T` — validates the object against your schema while keeping the exact, readonly literal types.",
+      "whenToApply": "Reach for `as const satisfies YourType` on configuration, theme, route, or lookup objects whenever you want all three of: structural validation against a schema, preserved literal types for autocomplete/narrowing, and immutability. Append it at the end of the object literal rather than annotating the variable.",
+      "examples": [
+        {
+          "label": "Avoid: explicit annotation widens the literals",
+          "language": "typescript",
+          "code": "interface Theme { primary: string; fontSize: number; }\n\n// ❌ Annotation widens the literal\nconst theme: Theme = { primary: \"blue\", fontSize: 16 };\ntype PrimaryColor = typeof theme.primary; // string"
+        },
+        {
+          "label": "Avoid: `as const` alone skips validation",
+          "language": "typescript",
+          "code": "interface Theme { primary: string; fontSize: number; }\n\n// ❌ Literals preserved, but the `fontsize` typo is NOT caught\nconst theme = { primary: \"blue\", fontsize: 16 } as const;"
+        },
+        {
+          "label": "Prefer: `as const satisfies` — validated + literal + immutable",
+          "language": "typescript",
+          "code": "interface Theme { primary: string; fontSize: number; }\n\n// ✅ Structure validated, literals & readonly preserved\nconst theme = { primary: \"blue\", fontSize: 16 } as const satisfies Theme;\ntype PrimaryColor = typeof theme.primary; // \"blue\"\n// A `fontsize` typo now errors: does not exist in type 'Theme'"
+        }
+      ],
+      "tags": ["satisfies", "as-const", "config", "literal-types", "immutability", "inference"],
+      "source": "https://www.instagram.com/developertomek/"
+    },
+    {
+      "id": "type-safe-api-contract",
+      "category": "generics",
+      "title": "Share one typed API contract across client and server",
+      "difficulty": "advanced",
+      "explanation": "Front-end fetch calls return any, forcing manual casts like `as User` — a lie the compiler can't verify, so a renamed back-end field breaks the front-end silently at runtime. A type-safe API layer defines a single contract interface mapping every endpoint to its exact request and response types, then wraps fetch in a generic keyed by that contract. Now a back-end rename makes every stale front-end reference fail to compile.",
+      "whenToApply": "Use in full-stack TypeScript (e.g. Next.js) to stop casting fetch responses. Define an `ApiContract` interface mapping each route to its `{ response, request? }` types, then a generic `apiFetch<K extends keyof ApiContract>(path: K): Promise<ApiContract[K][\"response\"]>`. Drive both the client fetch wrapper and the route handlers off the same contract.",
+      "examples": [
+        {
+          "label": "Avoid: untyped fetch and a casting lie",
+          "language": "typescript",
+          "code": "// ❌ res.json() is `any`; `as User` is unchecked and breaks silently\nconst res = await fetch(\"/api/user\");\nconst data = (await res.json()) as User;"
+        },
+        {
+          "label": "Prefer: a shared generic contract",
+          "language": "typescript",
+          "code": "interface ApiContract {\n  \"/api/user\": { response: User };\n  \"/api/posts\": { response: Post[] };\n}\n\nasync function apiFetch<K extends keyof ApiContract>(\n  path: K\n): Promise<ApiContract[K][\"response\"]> {\n  const res = await fetch(path);\n  return res.json();\n}\n\nconst user = await apiFetch(\"/api/user\");\nuser.name; // typed — rename a server field and every caller fails to compile"
+        }
+      ],
+      "tags": ["generics", "api", "fetch", "contract", "full-stack", "keyof", "indexed-access"],
+      "source": "https://www.instagram.com/developertomek/"
+    },
+    {
+      "id": "native-type-predicate-guards",
+      "category": "guards",
+      "title": "Narrow `unknown` payloads with native type predicates (no dependencies)",
+      "difficulty": "intermediate",
+      "explanation": "A schema library like Zod is the right call for large production apps, but for a tiny script or single serverless function it can be overkill. TypeScript's native type predicates fill the gap: a small validation function whose return type is `v is User` acts as a compiler bridge. The moment the native checks pass, TypeScript locks the raw `unknown` payload into your exact interface — full autocomplete and type safety with zero extra dependencies.",
+      "whenToApply": "Use a native type predicate for small, zero-dependency scripts or serverless functions where pulling in a schema validator is unnecessary. Write `function isUser(v: unknown): v is User { ... }` checking the required fields, then guard (`if (isUser(data))`) or assert before use. For large or security-sensitive apps, prefer a full schema validator like Zod.",
+      "examples": [
+        {
+          "label": "Avoid: JSON.parse yields `any`",
+          "language": "typescript",
+          "code": "// ❌ JSON.parse returns `any` — no checks, no autocomplete\nconst data = JSON.parse(response);\ndata.name; // unchecked"
+        },
+        {
+          "label": "Prefer: a `v is T` type predicate narrows safely",
+          "language": "typescript",
+          "code": "interface User { id: string; name: string; }\n\nfunction isUser(v: unknown): v is User {\n  return typeof v === \"object\" && v !== null && \"id\" in v && \"name\" in v;\n}\n\nconst data: unknown = JSON.parse(response);\nif (isUser(data)) {\n  console.log(data.name); // narrowed to User — zero dependencies\n}"
+        }
+      ],
+      "tags": ["type-predicates", "guards", "is-operator", "narrowing", "unknown", "zod-alternative"],
+      "source": "https://www.instagram.com/developertomek/"
     }
   ]
 }
