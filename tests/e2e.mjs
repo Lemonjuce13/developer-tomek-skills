@@ -29,6 +29,12 @@ process.chdir(sandbox); // isolates "project" skill scope (cwd/.claude)
 fs.copyFileSync(path.join(REPO, "data/rules.json"), path.join(dataHome, "rules.json"));
 fs.copyFileSync(path.join(REPO, "rules.config.json"), path.join(dataHome, "rules.config.json"));
 
+// Derive expectations from the seeded registry so the test isn't tied to a fixed count.
+const seeded = JSON.parse(fs.readFileSync(path.join(dataHome, "rules.json"), "utf-8"));
+const TOTAL_RULES = seeded.rules.length;
+const GUARD_IDS = seeded.rules.filter((r) => r.category === "guards").map((r) => r.id);
+const DISABLE_ID = "assertion-functions-flat-narrowing";
+
 let failures = 0;
 const check = (label, cond, detail = "") => {
   console.log(`${cond ? "  ok  " : " FAIL "}${label}${detail ? " — " + detail : ""}`);
@@ -59,19 +65,21 @@ async function main() {
   banner("get_tomek_paradigms (no args)");
   const all = await client.callTool({ name: "get_tomek_paradigms", arguments: {} });
   console.log("structured rules:", all.structuredContent.rules.length);
-  check("returns both seeded rules", all.structuredContent.rules.length === 2);
+  check("returns all seeded rules", all.structuredContent.rules.length === TOTAL_RULES, `expected ${TOTAL_RULES}`);
   check("text content present", all.content[0].text.length > 100);
 
   banner("get_tomek_paradigms (category=guards)");
   const guards = await client.callTool({ name: "get_tomek_paradigms", arguments: { category: "guards" } });
   console.log("guards rule ids:", guards.structuredContent.rules.map((r) => r.id).join(", "));
-  check("category filter narrows to guards", guards.structuredContent.rules.length === 1
-    && guards.structuredContent.rules[0].id === "assertion-functions-flat-narrowing");
+  check("category filter narrows to guards",
+    guards.structuredContent.rules.length === GUARD_IDS.length
+      && guards.structuredContent.rules.every((r) => GUARD_IDS.includes(r.id)),
+    `expected ${GUARD_IDS.length} guard rule(s)`);
 
   banner("list_rules (initial)");
   const list1 = await client.callTool({ name: "list_rules", arguments: {} });
   console.log(list1.content[0].text);
-  check("both rules ON initially", (list1.content[0].text.match(/\[ON /g) || []).length === 2);
+  check("all rules ON initially", (list1.content[0].text.match(/\[ON /g) || []).length === TOTAL_RULES, `expected ${TOTAL_RULES}`);
 
   banner("apply-tomek-style prompt");
   const prompt = await client.getPrompt({ name: "apply-tomek-style", arguments: {} });
@@ -82,7 +90,7 @@ async function main() {
   banner("set_rules_enabled (disable assertion-functions-flat-narrowing)");
   const toggled = await client.callTool({
     name: "set_rules_enabled",
-    arguments: { ids: ["assertion-functions-flat-narrowing"], enabled: false },
+    arguments: { ids: [DISABLE_ID], enabled: false },
   });
   console.log(toggled.content[0].text);
 
@@ -94,7 +102,7 @@ async function main() {
   banner("manifest persisted to disk");
   const manifest = JSON.parse(fs.readFileSync(path.join(dataHome, "rules.config.json"), "utf-8"));
   console.log(JSON.stringify(manifest));
-  check("manifest reflects toggle", manifest.rules["assertion-functions-flat-narrowing"] === false);
+  check("manifest reflects toggle", manifest.rules[DISABLE_ID] === false);
 
   banner("generated apply-skill files regenerated on toggle");
   const skillDir = path.join(sandbox, ".claude/skills/tomek-rules");
@@ -102,8 +110,8 @@ async function main() {
     ? fs.readdirSync(path.join(skillDir, "rules"))
     : [];
   console.log("rules/:", ruleFiles.join(", ") || "(none)", "| SKILL.md:", fs.existsSync(path.join(skillDir, "SKILL.md")));
-  check("only the active rule's md remains", ruleFiles.length === 1
-    && ruleFiles[0] === "interface-vs-type-architecture.md");
+  check("disabled rule's markdown removed", !ruleFiles.includes(`${DISABLE_ID}.md`));
+  check("active rule markdown count matches", ruleFiles.length === TOTAL_RULES - 1, `expected ${TOTAL_RULES - 1}`);
   check("SKILL.md generated", fs.existsSync(path.join(skillDir, "SKILL.md")));
 
   banner("selfSync regenerates installed skill on a content version bump");
