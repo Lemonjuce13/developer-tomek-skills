@@ -83,6 +83,15 @@ Local-dev form (point at your built entry):
 claude mcp add tomek-rules -- node /ABSOLUTE/PATH/to/tomek-rules-mcp/dist/cli.js serve
 ```
 
+The installer picks the right one **automatically**: run from a cloned source tree it registers
+the local `node …/dist/cli.js serve` form; run as an installed/`npx` package it registers
+`npx -y tomek-rules-mcp serve`. Override with `--local` or `--npx` if needed — e.g. to test the
+local build before publishing:
+
+```bash
+node dist/cli.js init --all --yes --local
+```
+
 This server speaks the **stdio** transport. All logs go to **stderr** — stdout is reserved for
 the JSON-RPC protocol.
 
