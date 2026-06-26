@@ -10,7 +10,7 @@
  */
 
 /** The latest content version published to GitHub — bumped by the release workflow. */
-export const REMOTE_VERSION = "2026-06-01T00:00:00Z";
+export const REMOTE_VERSION = "2026-09-01T00:00:00Z";
 
 /**
  * Compare `localVersion` (an ISO-8601 date string) to the pinned REMOTE_VERSION.
