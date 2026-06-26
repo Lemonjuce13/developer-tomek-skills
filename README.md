@@ -124,9 +124,20 @@ added rules are auto-listed (defaulting to enabled) so the file always shows the
 
 ## Auto-update
 
-The server pins a mock `REMOTE_VERSION`. On startup and on each `get_tomek_paradigms` call it
-compares that to your content's `version` and, if the remote is newer, prints a 🔔 notice to
-**stderr** prompting a refresh — demonstrating how the registry would sync from GitHub.
+Two mechanisms work together:
+
+- **Remote check (informational).** The server pins a mock `REMOTE_VERSION`. On startup and on
+  each `get_tomek_paradigms` call it compares that to your content's `version`; if the remote is
+  newer it prints a 🔔 notice to **stderr** — demonstrating how the registry would sync from GitHub.
+- **Self-sync (automatic).** On startup, the server compares your `rules.json` `version` to the
+  last-synced stamp (`~/.tomek-rules/.sync-stamp`). If it changed, it **regenerates the installed
+  skill files** for every installed scope — no manual `sync` needed. Because the server is spawned
+  fresh by Claude Code each session, bumping the `version` after editing `rules.json` means the
+  next session automatically picks up the new content. (Self-sync only refreshes already-installed
+  skills; it never touches the read-only bundled package dir.)
+
+In a full release, the startup step would first **fetch** the latest `rules.json` from GitHub and
+then self-sync — closing the loop end to end.
 
 ## Roadmap
 
