@@ -1,5 +1,5 @@
 {
-  "version": "2026-06-26T00:00:00Z",
+  "version": "2026-06-27T00:00:00Z",
   "rules": [
     {
       "id": "interface-vs-type-architecture",
@@ -120,6 +120,121 @@
       ],
       "tags": ["type-predicates", "guards", "is-operator", "narrowing", "unknown", "zod-alternative"],
       "source": "https://www.instagram.com/developertomek/"
+    },
+    {
+      "id": "result-type-error-handling",
+      "category": "utility",
+      "title": "Return a `Result<T, E>` instead of throwing — make failure paths type-checked",
+      "difficulty": "advanced",
+      "explanation": "Thrown exceptions are not part of a function's type signature, so the compiler cannot warn callers to handle them — a forgotten network, validation, or database failure slips past the type checker and crashes at runtime, and a caught `error` is typed `unknown`. The Result pattern (from Rust's `Result<T, E>`) models failure as ordinary data: the function returns a discriminated union of an `ok: true` success or an `ok: false` error. The caller cannot reach the value without first checking the `ok` flag, so error handling becomes compiler-enforced and self-documenting.",
+      "whenToApply": "Use a `Result<T, E>` return type for operations with expected, domain-level failures (validation, parsing, network/DB calls) where callers should be forced to handle errors at compile time instead of relying on try/catch discipline. Define `type Result<T, E> = { ok: true; value: T } | { ok: false; error: E }`, return the matching variant, and narrow with `if (result.ok)` before touching `result.value`. Keep throwing for truly unexpected programmer errors.",
+      "examples": [
+        {
+          "label": "Avoid: an implicit throw is invisible to the type system",
+          "language": "typescript",
+          "code": "// ❌ The throw isn't in the signature — callers get no warning to handle it\nfunction fetchUser(id: string): User {\n  if (!id) throw new Error(\"Invalid ID\");\n  return { id, name: \"Alex\" };\n}\n\nconst user = fetchUser(\"\"); // compiles fine, throws at runtime"
+        },
+        {
+          "label": "Avoid: try/catch loses the error type",
+          "language": "typescript",
+          "code": "// ❌ `e` is `unknown` — no typed information about what failed\ntry {\n  const user = fetchUser(\"\");\n} catch (e) {\n  // e: unknown\n}"
+        },
+        {
+          "label": "Prefer: Result makes failure typed and unavoidable",
+          "language": "typescript",
+          "code": "type Result<T, E> =\n  | { ok: true; value: T }\n  | { ok: false; error: E };\n\nfunction fetchUser(id: string): Result<User, string> {\n  if (!id) return { ok: false, error: \"Invalid ID\" };\n  return { ok: true, value: { id, name: \"Alex\" } };\n}\n\nconst result = fetchUser(\"123\");\nif (result.ok) {\n  console.log(result.value.name); // value only reachable after the check\n} else {\n  console.log(result.error); // typed error\n}"
+        }
+      ],
+      "tags": ["result-type", "error-handling", "discriminated-union", "rust", "ok-err"],
+      "source": "https://www.instagram.com/p/DZnYATUxxbQ/"
+    },
+    {
+      "id": "type-safe-event-emitter",
+      "category": "generics",
+      "title": "Make an event emitter type-safe with a generic event map",
+      "difficulty": "advanced",
+      "explanation": "An emitter typed with `string` event names and `any` payloads cannot guarantee that an event name matches its payload — a typo like `user:logn` or a wrong payload shape passes silently and breaks at runtime. Parameterise the emitter over an event-map type (`Record<event, payload>`) and key `on`/`emit` with `K extends keyof T`, binding each event name to its exact payload. The compiler then restricts both methods to declared events, gives full autocomplete, and rejects mismatched payloads — with zero runtime cost, since the types erase after compilation.",
+      "whenToApply": "Use a generic event map whenever you build pub/sub, an event bus, or any `on`/`emit` API and want event names and payloads validated at compile time. Declare an interface mapping each event key to its payload type, make the emitter `class EventEmitter<T extends Record<string, unknown>>`, and type the methods with `on<K extends keyof T>(event: K, cb: (data: T[K]) => void)` and `emit<K extends keyof T>(event: K, data: T[K])`.",
+      "examples": [
+        {
+          "label": "Avoid: string keys + any payload — typos and wrong shapes slip through",
+          "language": "typescript",
+          "code": "// ❌ Any string, any payload — nothing is checked\nclass EventEmitter {\n  private listeners: Record<string, Function[]> = {};\n  on(event: string, cb: Function) {\n    (this.listeners[event] ??= []).push(cb);\n  }\n  emit(event: string, data: any) {\n    this.listeners[event]?.forEach((cb) => cb(data));\n  }\n}\n\nconst e = new EventEmitter();\ne.emit(\"user:logn\", { id: 1 });    // typo — silently ignored\ne.emit(\"user:login\", { name: 1 }); // wrong payload — unnoticed"
+        },
+        {
+          "label": "Prefer: a generic event map binds each name to its payload",
+          "language": "typescript",
+          "code": "interface EventMap {\n  \"user:login\": { id: number; name: string };\n  \"user:logout\": { id: number };\n  \"page:view\": { url: string };\n}\n\nclass EventEmitter<T extends Record<string, unknown>> {\n  private listeners: { [K in keyof T]?: Array<(data: T[K]) => void> } = {};\n  on<K extends keyof T>(event: K, cb: (data: T[K]) => void) {\n    (this.listeners[event] ??= []).push(cb);\n  }\n  emit<K extends keyof T>(event: K, data: T[K]) {\n    this.listeners[event]?.forEach((cb) => cb(data));\n  }\n}\n\nconst emitter = new EventEmitter<EventMap>();\nemitter.emit(\"user:login\", { id: 1, name: \"tomek\" }); // ✅\nemitter.emit(\"user:logn\", { id: 1 });    // ❌ not a known event\nemitter.emit(\"user:login\", { name: 1 }); // ❌ wrong payload"
+        }
+      ],
+      "tags": ["generics", "event-emitter", "pub-sub", "keyof", "mapped-types", "event-map"],
+      "source": "https://www.instagram.com/p/DZiLhwcxsYS/"
+    },
+    {
+      "id": "tuple-wrapped-conditional-types",
+      "category": "types",
+      "title": "Wrap conditional types in tuples (`[T] extends [X]`) to stop union distribution",
+      "difficulty": "advanced",
+      "explanation": "When a bare generic parameter sits on the left of a conditional type (`T extends X ? ...`), TypeScript distributes: it evaluates the condition for each member of a union `T` separately and unions the results. That is ideal for filtering, but it breaks checks that must consider the union as a whole (e.g. 'is this union as a whole assignable to X?'), producing mixed results like `\"valid\" | \"invalid\"`. Wrapping both sides in a one-element tuple — `[T] extends [X]` — disables distribution and evaluates the union as a single unit. It is a pure type-level technique with no runtime footprint.",
+      "whenToApply": "Reach for `[T] extends [X]` whenever a conditional type must treat a union as one whole value rather than per member — exact-union compatibility checks, `IsNever`/`IsAny`-style guards, or any rule where distribution gives wrong answers. Keep the bare `T extends X` form when you actually want to map or filter each union member individually.",
+      "examples": [
+        {
+          "label": "Avoid: a bare parameter distributes the union",
+          "language": "typescript",
+          "code": "type Role = \"admin\" | \"user\";\n\n// ❌ Distributes per member, so a mixed union yields a mixed result\ntype IsRole<T> = T extends Role ? \"valid\" : \"invalid\";\n\ntype Check = IsRole<\"admin\" | \"guest\">; // \"valid\" | \"invalid\""
+        },
+        {
+          "label": "Prefer: tuple-wrap evaluates the whole union at once",
+          "language": "typescript",
+          "code": "type Role = \"admin\" | \"user\";\n\n// ✅ Non-distributive: the union is checked as a single unit\ntype IsRole<T> = [T] extends [Role] ? \"valid\" : \"invalid\";\n\ntype Ok = IsRole<\"admin\" | \"user\">;  // \"valid\"\ntype No = IsRole<\"admin\" | \"guest\">; // \"invalid\""
+        }
+      ],
+      "tags": ["conditional-types", "distributive", "union-types", "tuple-trick", "type-level"],
+      "source": "https://www.instagram.com/p/DZdBJomxHHW/"
+    },
+    {
+      "id": "phantom-types-state-safety",
+      "category": "types",
+      "title": "Tag data state with phantom types to make invalid transitions uncompilable",
+      "difficulty": "advanced",
+      "explanation": "When two states share the same runtime shape (e.g. an unvalidated vs. a validated order), ordinary types cannot tell them apart, so you fall back to runtime `if` checks and risk calling `ship()` on an unvalidated order. A phantom type adds a generic parameter that exists only at the type level — it tags the data with its state and is erased from the emitted JavaScript (zero runtime cost). Functions then accept only the correctly-tagged type, so illegal transitions fail to compile instead of at runtime.",
+      "whenToApply": "Use phantom types to model state machines and lifecycles (unvalidated → validated, draft → published, open → closed) where stages share structure but must not be interchangeable. Add a marker like `type Order<State> = { ... } & { readonly __state: State }`, expose distinct aliases (`Unvalidated`, `Validated`), and write transition functions that take one state and return the next (`validate(o: Unvalidated): Validated`) so consumers cannot skip steps.",
+      "examples": [
+        {
+          "label": "Avoid: identical shapes leave state to runtime checks",
+          "language": "typescript",
+          "code": "type Order = { id: string; items: string[] };\n\nfunction ship(order: Order) {\n  /* ship logic */\n}\n\n// ❌ Nothing stops shipping an unvalidated order\nship({ id: \"1\", items: [\"hat\"] });"
+        },
+        {
+          "label": "Prefer: a phantom state parameter blocks illegal transitions",
+          "language": "typescript",
+          "code": "type Order<State> = { id: string; items: string[] } & {\n  readonly __state: State;\n};\n\ntype Unvalidated = Order<\"unvalidated\">;\ntype Validated = Order<\"validated\">;\n\nfunction validate(order: Unvalidated): Validated {\n  return { ...order, __state: \"validated\" };\n}\nfunction ship(order: Validated): void {\n  /* ship logic */\n}\n\nconst order: Unvalidated = { id: \"1\", items: [\"hat\"], __state: \"unvalidated\" };\n\nship(order);           // ❌ Validated expected, got Unvalidated\nship(validate(order)); // ✅ must validate first"
+        }
+      ],
+      "tags": ["phantom-types", "branded-types", "state-machine", "nominal-typing", "compile-time-safety"],
+      "source": "https://www.instagram.com/p/DZXyrH1Rb8H/"
+    },
+    {
+      "id": "const-type-parameters",
+      "category": "generics",
+      "title": "Use `const` type parameters to keep literal types without `as const` at every call",
+      "difficulty": "intermediate",
+      "explanation": "Passing an inline object or array into a generic function widens its literals — `{ theme: \"dark\" }` becomes `{ theme: string }` — so callers had to append `as const` at every call site to preserve exact values. TypeScript 5.0's const type parameters move that decision into the function signature: prefix the generic with `const` (`function f<const T>(x: T)`) and any argument is inferred as deeply readonly and literal automatically, with no caller-side syntax and no runtime cost.",
+      "whenToApply": "Add `const` to a generic parameter (`<const T>`) when authoring library or utility functions that take inline config objects, arrays, or tuples and should preserve literal types and readonly-ness for the caller — so consumers get precise inference without writing `as const`. Requires TypeScript >= 5.0.",
+      "examples": [
+        {
+          "label": "Avoid: a plain generic widens; the caller must add `as const`",
+          "language": "typescript",
+          "code": "// ❌ Literals widen to string / number…\nfunction createConfig<T>(config: T) {\n  return config;\n}\nconst a = createConfig({ theme: \"dark\", port: 3000 });\n// a: { theme: string; port: number }\n\n// …so every caller has to opt back in:\nconst b = createConfig({ theme: \"dark\", port: 3000 } as const);"
+        },
+        {
+          "label": "Prefer: a const type parameter preserves literals automatically",
+          "language": "typescript",
+          "code": "// ✅ `const T` infers deeply readonly, literal types with no caller syntax\nfunction createConfig<const T>(config: T) {\n  return config;\n}\n\nconst c = createConfig({ theme: \"dark\", port: 3000 });\n// c: { readonly theme: \"dark\"; readonly port: 3000 }"
+        }
+      ],
+      "tags": ["const-type-parameters", "generics", "literal-types", "as-const", "inference", "typescript-5"],
+      "source": "https://www.instagram.com/p/DZSnDhnREPr/"
     }
   ]
 }
