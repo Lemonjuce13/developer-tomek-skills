@@ -106,6 +106,20 @@ async function main() {
     && ruleFiles[0] === "interface-vs-type-architecture.md");
   check("SKILL.md generated", fs.existsSync(path.join(skillDir, "SKILL.md")));
 
+  banner("selfSync regenerates installed skill on a content version bump");
+  const { selfSync } = await import(pathToFileURL(path.join(REPO, "dist/sync.js")).href);
+  selfSync(); // establish the baseline stamp at the current version
+  const rulesPath = path.join(dataHome, "rules.json");
+  const reg = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
+  reg.version = "2099-01-01T00:00:00Z";
+  fs.writeFileSync(rulesPath, JSON.stringify(reg, null, 2));
+  const resync = selfSync();
+  const skillMd = fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf-8");
+  console.log("selfSync:", JSON.stringify({ synced: resync.synced, previous: resync.previous, version: resync.version }));
+  check("selfSync detects the version change", resync.synced && resync.previous !== null);
+  check("regenerated SKILL.md carries the new version", skillMd.includes("2099-01-01T00:00:00Z"));
+  check("selfSync is a no-op when version is unchanged", selfSync().synced === false);
+
   await client.close();
 }
 
