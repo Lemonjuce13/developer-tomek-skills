@@ -19,6 +19,7 @@
     "serve": "node dist/cli.js serve",
     "sync": "node dist/cli.js sync",
     "init": "node dist/cli.js init",
+    "test": "npm run build && node tests/e2e.mjs",
     "inspect": "npx @modelcontextprotocol/inspector node dist/cli.js serve"
   },
   "keywords": [
