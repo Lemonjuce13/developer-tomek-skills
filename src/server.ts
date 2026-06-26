@@ -115,13 +115,14 @@ export function createServer(): McpServer {
     async ({ ids, enabled }) => {
       setEnabled(ids, enabled);
 
-      // Regenerate skills: the default (bundled) skill, plus project and global
-      // Claude Code skill directories. Each is wrapped so a missing or unwritable
-      // directory (e.g. a read-only npx cache, or a scope never initialised) is
-      // silently skipped rather than aborting the whole operation.
-      for (const target of [undefined, getApplySkillDir("project"), getApplySkillDir("global")]) {
+      // Regenerate the *installed* apply skill in both the project and global Claude
+      // Code skill directories. We deliberately do NOT touch the bundled package dir:
+      // at runtime that lives in a read-only npx cache, and writing it would also
+      // pollute a checked-out repo during local dev/tests. Each target is wrapped so a
+      // missing or unwritable scope is skipped rather than aborting the toggle.
+      for (const scope of ["project", "global"] as const) {
         try {
-          syncSkill(target);
+          syncSkill(getApplySkillDir(scope));
         } catch {
           // Skip unwritable/non-existent skill directories.
         }
