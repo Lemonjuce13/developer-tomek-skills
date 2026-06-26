@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "interface-vs-type-architecture": true,
+    "assertion-functions-flat-narrowing": true
+  }
+}

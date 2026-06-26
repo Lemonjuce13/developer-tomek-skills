@@ -1,0 +1,46 @@
+{
+  "name": "tomek-rules-mcp",
+  "version": "0.1.0",
+  "description": "MCP server + Claude skills delivering Tomasz's (@developertomek) type-safe TypeScript paradigms to AI coding agents.",
+  "type": "module",
+  "bin": {
+    "tomek-rules-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "data",
+    "skills",
+    "rules.config.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/cli.js serve",
+    "serve": "node dist/cli.js serve",
+    "sync": "node dist/cli.js sync",
+    "init": "node dist/cli.js init",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/cli.js serve"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "typescript",
+    "claude",
+    "claude-skill",
+    "code-style"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

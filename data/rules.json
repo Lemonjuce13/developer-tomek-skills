@@ -1,0 +1,54 @@
+{
+  "version": "2025-12-01T00:00:00Z",
+  "rules": [
+    {
+      "id": "interface-vs-type-architecture",
+      "category": "types",
+      "title": "Choose Interface for Extensible Objects and Type Aliases for Data Transformation",
+      "difficulty": "intermediate",
+      "explanation": "Interfaces and type aliases look identical for simple objects, but have different architectural strengths. Interfaces support native declaration merging which is optimal for public APIs and extensible object shapes. Type aliases support operations like unions, intersections, and mapped types that interfaces cannot replicate, making them ideal for complex domain logic.",
+      "whenToApply": "Use an `interface` when defining public API contracts, database entities, or component prop types that may benefit from extension or merging. Use a `type` alias when creating status unions, combining shapes via intersections, creating scalar aliases, or utilizing complex mapped types.",
+      "examples": [
+        {
+          "label": "Avoid: interface can't model a union",
+          "language": "typescript",
+          "code": "// ❌ Invalid: 'interface' can only declare object shapes, not union aliases\ninterface Status = \"active\" | \"inactive\" | \"pending\"; // Syntax Error"
+        },
+        {
+          "label": "Prefer Interface for object shapes and declaration merging",
+          "language": "typescript",
+          "code": "interface User {\n  id: string;\n  name: string;\n}\n\n// Automatically merges new properties\ninterface User {\n  email: string;\n}\n\nconst user: User = {\n  id: \"1\",\n  name: \"Alex\",\n  email: \"a@b.com\"\n};"
+        },
+        {
+          "label": "Prefer Type for unions, intersections, and mapped types",
+          "language": "typescript",
+          "code": "type Status = \"active\" | \"inactive\" | \"pending\";\n\ntype Timestamps = {\n  createdAt: Date;\n  updatedAt: Date;\n};\n\n// Intersection\ntype UserWithTimeline = {\n  id: string;\n  status: Status;\n} & Timestamps;\n\n// Mapped Type transformation\ntype Nullable<T> = {\n  [K in keyof T]: T[K] | null;\n};"
+        }
+      ],
+      "tags": ["interface", "type-alias", "declaration-merging", "unions", "intersections", "mapped-types"],
+      "source": "https://www.instagram.com/p/DaBKiI8xtEs/"
+    },
+    {
+      "id": "assertion-functions-flat-narrowing",
+      "category": "guards",
+      "title": "Flatten nested guards with assertion functions (`asserts value is T`)",
+      "difficulty": "advanced",
+      "explanation": "Standard type predicates (`x is T`) return a boolean, so they force you into conditional — often deeply nested — blocks to narrow a type. An assertion function instead uses `asserts value is T` in its return type: if the function doesn't throw, the compiler treats the value as that exact type for the rest of the scope. The result is flat, linear code that delivers runtime safety and compile-time narrowing in a single call. It's the same pattern Jest, Playwright, and Vitest rely on under the hood.",
+      "whenToApply": "Reach for an assertion function when nested `if` guards are piling up just to satisfy the type checker, or for defensive checks and env/config validation where a missing value should hard-fail. Declare `function assertX(v: T | null | undefined): asserts v is T` (the `asserts` predicate must be an explicit return annotation — it can't be inferred), throw on the invalid case, then call it to narrow the variable without wrapping the rest of your logic in conditionals.",
+      "examples": [
+        {
+          "label": "Avoid: nested if-guards to satisfy the type checker",
+          "language": "typescript",
+          "code": "// ❌ Type predicates (x is T) return a boolean,\n//    forcing nested conditional blocks to narrow\nconst user = users.find((u) => u.id === \"123\");\n\nif (user) {\n  const order = orders.find((o) => o.userId === user.id);\n  if (order) {\n    console.log(order.total); // pyramid of nesting\n  }\n}"
+        },
+        {
+          "label": "Prefer: assertion function for flat, linear narrowing",
+          "language": "typescript",
+          "code": "// asserts value is T -> if it doesn't throw, the type is narrowed\nfunction assertExists<T>(value: T | null | undefined): asserts value is T {\n  if (value == null) throw new Error(\"Missing value\");\n}\n\nconst user = users.find((u) => u.id === \"123\");\nassertExists(user); // user is now T for the rest of the scope\n\nconst order = orders.find((o) => o.userId === user.id);\nassertExists(order);\n\n// Flat, zero nesting\nconsole.log(order.total);"
+        }
+      ],
+      "tags": ["asserts", "assertion-functions", "type-narrowing", "guards", "type-predicates"],
+      "source": "https://www.instagram.com/p/DZ7_r_DREnj/"
+    }
+  ]
+}
