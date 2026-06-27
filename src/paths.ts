@@ -9,10 +9,7 @@
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-/** Slugs for the two skills this package ships. */
-export const SKILL_APPLY = "tomek-rules";
-export const SKILL_CONFIG = "tomek-rules-config";
+import { SKILL_APPLY } from "./names.js";
 
 /**
  * Package root. At runtime this file is `dist/paths.js`, so the package root is one
