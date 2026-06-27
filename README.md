@@ -1,6 +1,6 @@
 # tomek-rules-mcp
 
-An MCP server **and** two Claude skills that deliver Tomasz's
+An MCP server **and** three Claude skills that deliver Tomasz's
 ([@developertomek](https://www.instagram.com/developertomek/)) advanced, type-safe TypeScript
 paradigms straight to AI coding agents. When you work in a TypeScript/React project, Claude
 auto-applies his curated idioms; the content is centrally toggleable and stays fresh via a
@@ -16,8 +16,15 @@ remote update check.
   see and curate the full active set in one file.
 - **MCP server** (`tomek-rules`) — the live back-end. Exposes tools to fetch and toggle rules,
   a prompt to adopt the style, and a mock remote update check.
-- **`tomek-rules` skill** — generated from the active rules; auto-triggers on TS/React work.
+- **`tomek-rules` skill** — generated from the active rules; auto-triggers on TS/React work to
+  apply the idioms.
 - **`tomek-rules-config` skill** — user-triggered; walks you through enabling/disabling rules.
+- **`tomek-rules-audit` skill** — read-only; analyzes a codebase and reports improvement
+  opportunities (value, necessity, before/after, effort) from the active rules. Best run in plan
+  mode.
+
+> All command/skill/server names live as consts in [`src/names.ts`](src/names.ts) (easy to
+> rebrand); the npm package name is read from `package.json` via [`src/config.ts`](src/config.ts).
 
 ```
 data/rules.json ──┐
