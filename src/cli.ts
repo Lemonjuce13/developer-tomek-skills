@@ -22,9 +22,8 @@ import {
   getConfigJsonPath,
   getSkillsTargetDir,
   getApplySkillDir,
-  SKILL_APPLY,
-  SKILL_CONFIG,
 } from "./paths.js";
+import { SKILL_APPLY, SKILL_CONFIG, SKILL_AUDIT, MCP_SERVER_NAME } from "./names.js";
 import { PACKAGE_NAME } from "./config.js";
 
 // ---------------------------------------------------------------------------
@@ -123,7 +122,7 @@ function seedDataHome(): void {
  */
 function mcpCmdParts(scope: "project" | "global", local: boolean): string[] {
   const scopeArgs = scope === "global" ? ["--scope", "user"] : [];
-  return ["claude", "mcp", "add", "tomek-rules", ...scopeArgs, "--", ...serveInvocation(local)];
+  return ["claude", "mcp", "add", MCP_SERVER_NAME, ...scopeArgs, "--", ...serveInvocation(local)];
 }
 
 function mcpCmdString(scope: "project" | "global", local: boolean): string {
@@ -172,9 +171,10 @@ function printSuccess(opts: {
   console.log(`  Config JSON : ${getConfigJsonPath()}`);
   console.log(`\nNext steps:`);
   console.log(`  1. Ensure the MCP server is registered (see command above).`);
-  console.log(`  2. In Claude Code, use /tomek-rules to apply active idioms.`);
-  console.log(`  3. Use /tomek-rules-config to toggle rules on/off.`);
-  console.log(`  4. Run \`${PACKAGE_NAME} sync\` after editing data/rules.json.\n`);
+  console.log(`  2. In Claude Code, the ${SKILL_APPLY} skill applies the active idioms automatically.`);
+  console.log(`  3. Use the ${SKILL_CONFIG} skill to toggle which rules are active.`);
+  console.log(`  4. Run the ${SKILL_AUDIT} skill (in plan mode) to audit a codebase for improvements.`);
+  console.log(`  5. Run \`${PACKAGE_NAME} sync\` after editing data/rules.json.\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +229,44 @@ async function runSync(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Skill installation (shared by the headless and interactive paths)
+// ---------------------------------------------------------------------------
+
+/** Copy a static (hand-authored) skill from the bundled package into the target dir. */
+function copyStaticSkill(name: string, skillsDir: string): void {
+  fs.cpSync(path.join(getBundledSkillsDir(), name), path.join(skillsDir, name), {
+    recursive: true,
+  });
+}
+
+/**
+ * Install the selected skills into `skillsDir`. The apply skill is generated from the
+ * active rules; config and audit are static, hand-authored skills copied verbatim.
+ * Returns the installed skill names.
+ */
+async function installSkills(
+  selected: string[],
+  scope: "project" | "global",
+  skillsDir: string
+): Promise<string[]> {
+  const installed: string[] = [];
+  if (selected.includes("apply")) {
+    const { syncSkill } = await import("./sync.js");
+    syncSkill(getApplySkillDir(scope));
+    installed.push(SKILL_APPLY);
+  }
+  if (selected.includes("config")) {
+    copyStaticSkill(SKILL_CONFIG, skillsDir);
+    installed.push(SKILL_CONFIG);
+  }
+  if (selected.includes("audit")) {
+    copyStaticSkill(SKILL_AUDIT, skillsDir);
+    installed.push(SKILL_AUDIT);
+  }
+  return installed;
+}
+
+// ---------------------------------------------------------------------------
 // init — headless path (flags present)
 // ---------------------------------------------------------------------------
 
@@ -238,7 +276,6 @@ async function runInitHeadless(opts: {
   registerMcp: boolean;
   local: boolean;
 }): Promise<void> {
-  const { syncSkill } = await import("./sync.js");
   const { skills, scope, registerMcp, local } = opts;
 
   seedDataHome();
@@ -246,19 +283,7 @@ async function runInitHeadless(opts: {
   const skillsDir = getSkillsTargetDir(scope);
   fs.mkdirSync(skillsDir, { recursive: true });
 
-  const installedSkills: string[] = [];
-
-  if (skills.includes("apply")) {
-    syncSkill(getApplySkillDir(scope));
-    installedSkills.push(SKILL_APPLY);
-  }
-
-  if (skills.includes("config")) {
-    const configSrc = path.join(getBundledSkillsDir(), SKILL_CONFIG);
-    const configDest = path.join(skillsDir, SKILL_CONFIG);
-    fs.cpSync(configSrc, configDest, { recursive: true });
-    installedSkills.push(SKILL_CONFIG);
-  }
+  const installedSkills = await installSkills(skills, scope, skillsDir);
 
   console.log(`\nMCP registration command:\n  ${mcpCmdString(scope, local)}\n`);
 
@@ -275,7 +300,6 @@ async function runInitHeadless(opts: {
 
 async function runInitInteractive(local: boolean): Promise<void> {
   const clack = await import("@clack/prompts");
-  const { syncSkill } = await import("./sync.js");
 
   clack.intro(`${PACKAGE_NAME} installer`);
 
@@ -283,10 +307,11 @@ async function runInitInteractive(local: boolean): Promise<void> {
   const skillsAnswer = await clack.multiselect({
     message: "Which Claude skills would you like to install?",
     options: [
-      { value: "apply", label: "tomek-rules (apply idioms)", hint: "recommended" },
-      { value: "config", label: "tomek-rules-config (configure active rules)", hint: "recommended" },
+      { value: "apply", label: `${SKILL_APPLY} (apply idioms)`, hint: "recommended" },
+      { value: "config", label: `${SKILL_CONFIG} (configure active rules)`, hint: "recommended" },
+      { value: "audit", label: `${SKILL_AUDIT} (analyze a codebase for improvements)`, hint: "plan mode" },
     ],
-    initialValues: ["apply", "config"],
+    initialValues: ["apply", "config", "audit"],
     required: true,
   });
 
@@ -333,19 +358,7 @@ async function runInitInteractive(local: boolean): Promise<void> {
   const skillsDir = getSkillsTargetDir(scope);
   fs.mkdirSync(skillsDir, { recursive: true });
 
-  const installedSkills: string[] = [];
-
-  if (selectedSkills.includes("apply")) {
-    syncSkill(getApplySkillDir(scope));
-    installedSkills.push(SKILL_APPLY);
-  }
-
-  if (selectedSkills.includes("config")) {
-    const configSrc = path.join(getBundledSkillsDir(), SKILL_CONFIG);
-    const configDest = path.join(skillsDir, SKILL_CONFIG);
-    fs.cpSync(configSrc, configDest, { recursive: true });
-    installedSkills.push(SKILL_CONFIG);
-  }
+  const installedSkills = await installSkills(selectedSkills, scope, skillsDir);
 
   clack.note(mcpCmdString(scope, local), "MCP registration command");
 
@@ -391,7 +404,7 @@ async function runInit(): Promise<void> {
   if (skillsFlag !== undefined && skillsFlag.length > 0) {
     skills = skillsFlag.split(",").map((s) => s.trim()).filter(Boolean);
   } else {
-    skills = ["apply", "config"];
+    skills = ["apply", "config", "audit"];
   }
   const scope: "project" | "global" = globalFlag ? "global" : "project";
   const registerMcp = yesFlag || !anyFlag;
