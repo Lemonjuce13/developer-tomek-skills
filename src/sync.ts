@@ -9,7 +9,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Rule } from "./schema.js";
-import { SKILL_APPLY, getBundledSkillsDir, getApplySkillDir, getDataHome } from "./paths.js";
+import { getBundledSkillsDir, getApplySkillDir, getDataHome } from "./paths.js";
+import { SKILL_APPLY } from "./names.js";
 import { getActiveRules, getVersion } from "./registry.js";
 import { ruleToMarkdown } from "./markdown.js";
 
