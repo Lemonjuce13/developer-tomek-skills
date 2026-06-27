@@ -119,13 +119,13 @@ export function createServer(): McpServer {
       // Regenerate the *installed* apply skill in both the project and global Claude
       // Code skill directories. We deliberately do NOT touch the bundled package dir:
       // at runtime that lives in a read-only npx cache, and writing it would also
-      // pollute a checked-out repo during local dev/tests. Each target is wrapped so a
-      // missing or unwritable scope is skipped rather than aborting the toggle.
+      // pollute a checked-out repo during local dev/tests. syncSkill's Result type
+      // lets us silently skip missing/unwritable scopes (the old behaviour) while
+      // still surfacing a corrupt registry — which the old blanket catch hid.
       for (const scope of ["project", "global"] as const) {
-        try {
-          syncSkill(getApplySkillDir(scope));
-        } catch {
-          // Skip unwritable/non-existent skill directories.
+        const r = syncSkill(getApplySkillDir(scope));
+        if (!r.ok && r.error.kind === "invalid-registry") {
+          console.error(`[tomek-rules] set_rules_enabled: registry invalid — ${r.error.message}`);
         }
       }
 

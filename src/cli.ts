@@ -184,30 +184,27 @@ function printSuccess(opts: {
 async function runSync(): Promise<void> {
   const { syncSkill } = await import("./sync.js");
 
-  const results: Array<{ label: string; files: string[]; error?: string }> = [];
+  const results: Array<{ label: string; files: string[] }> = [];
 
-  // Sync the project-scoped apply skill
-  try {
-    const r = syncSkill(getApplySkillDir("project"));
-    results.push({ label: `project (${r.skillRoot})`, files: r.ruleFiles });
-  } catch {
-    // Skip unwritable scopes silently
-  }
+  // syncSkill now returns Result<SyncOutput, SyncError>: "unwritable" scopes
+  // are skipped silently (matches the old try/catch intent), but a registry
+  // error — which the old blanket catch would swallow — gets surfaced.
+  const targets: Array<{ label: (root: string) => string; dir?: string }> = [
+    { label: (root) => `project (${root})`, dir: getApplySkillDir("project") },
+    { label: (root) => `global (${root})`, dir: getApplySkillDir("global") },
+    { label: (root) => `default (${root})` }, // no-arg → syncSkill's own default
+  ];
 
-  // Sync the global-scoped apply skill
-  try {
-    const r = syncSkill(getApplySkillDir("global"));
-    results.push({ label: `global (${r.skillRoot})`, files: r.ruleFiles });
-  } catch {
-    // Skip unwritable scopes silently
-  }
-
-  // Also run a no-arg sync (respects syncSkill's own default)
-  try {
-    const r = syncSkill();
-    results.push({ label: `default (${r.skillRoot})`, files: r.ruleFiles });
-  } catch {
-    // Skip unwritable scopes silently
+  for (const { label, dir } of targets) {
+    const r = dir === undefined ? syncSkill() : syncSkill(dir);
+    if (r.ok) {
+      results.push({ label: label(r.value.skillRoot), files: r.value.ruleFiles });
+    } else if (r.error.kind === "invalid-registry") {
+      console.error(`sync: registry invalid — ${r.error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    // "unwritable" → skip silently
   }
 
   if (results.length === 0) {
@@ -252,7 +249,10 @@ async function installSkills(
   const installed: string[] = [];
   if (selected.includes("apply")) {
     const { syncSkill } = await import("./sync.js");
-    syncSkill(getApplySkillDir(scope));
+    const r = syncSkill(getApplySkillDir(scope));
+    if (!r.ok && r.error.kind === "invalid-registry") {
+      throw new Error(`failed to generate ${SKILL_APPLY}: ${r.error.message}`);
+    }
     installed.push(SKILL_APPLY);
   }
   if (selected.includes("config")) {

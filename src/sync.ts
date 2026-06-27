@@ -60,36 +60,94 @@ export function renderSkillMd(rules: Rule[], version: string): string {
 }
 
 /**
- * Regenerate the apply skill at `skillRoot` (default: the bundled skill dir):
- * writes one `rules/<id>.md` per active rule plus a fresh `SKILL.md`, removing any
- * stale per-rule files first.
+ * Discriminated-union failure type for `syncSkill`. We distinguish "this scope
+ * isn't writable / doesn't exist" — which callers legitimately want to skip
+ * silently — from "the registry itself is invalid", which is a real bug callers
+ * should surface instead of swallow.
  */
-export function syncSkill(skillRoot?: string): {
+export type SyncError =
+  | { kind: "unwritable"; cause: NodeJS.ErrnoException }
+  | { kind: "invalid-registry"; message: string };
+
+/** Rust-style `Result`: success and failure travel through the type system. */
+export type Result<T, E> =
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+
+/** Successful output of `syncSkill`. */
+export interface SyncOutput {
   skillRoot: string;
   ruleFiles: string[];
   skillMdPath: string;
-} {
+}
+
+/** Filesystem error codes that mean "this scope is missing or not writable". */
+const UNWRITABLE_CODES = new Set(["ENOENT", "EACCES", "EPERM", "EROFS", "ENOTDIR"]);
+
+function isErrnoException(e: unknown): e is NodeJS.ErrnoException {
+  return e instanceof Error && typeof (e as NodeJS.ErrnoException).code === "string";
+}
+
+/**
+ * Regenerate the apply skill at `skillRoot` (default: the bundled skill dir):
+ * writes one `rules/<id>.md` per active rule plus a fresh `SKILL.md`, removing any
+ * stale per-rule files first. Returns a `Result` so callers can route an
+ * "unwritable" scope to a silent skip while still surfacing registry corruption.
+ */
+export function syncSkill(skillRoot?: string): Result<SyncOutput, SyncError> {
   const root = skillRoot ?? path.join(getBundledSkillsDir(), SKILL_APPLY);
+
+  // Load the registry first: a malformed rules.json is a registry error, never
+  // an "unwritable scope" — keep the two failure modes distinct.
+  let activeRules: Rule[];
+  let version: string;
+  try {
+    activeRules = getActiveRules();
+    version = getVersion();
+  } catch (err) {
+    return {
+      ok: false,
+      error: { kind: "invalid-registry", message: err instanceof Error ? err.message : String(err) },
+    };
+  }
+
   const rulesDir = path.join(root, "rules");
-  fs.mkdirSync(rulesDir, { recursive: true });
+  try {
+    fs.mkdirSync(rulesDir, { recursive: true });
 
-  // Remove stale rule files so disabled/renamed rules don't linger.
-  for (const entry of fs.readdirSync(rulesDir)) {
-    if (entry.endsWith(".md")) fs.rmSync(path.join(rulesDir, entry));
+    // Remove stale rule files so disabled/renamed rules don't linger.
+    for (const entry of fs.readdirSync(rulesDir)) {
+      if (entry.endsWith(".md")) fs.rmSync(path.join(rulesDir, entry));
+    }
+
+    const ruleFiles: string[] = [];
+    for (const rule of activeRules) {
+      const filePath = path.join(rulesDir, `${rule.id}.md`);
+      fs.writeFileSync(filePath, ruleToMarkdown(rule), "utf-8");
+      ruleFiles.push(filePath);
+    }
+
+    const skillMdPath = path.join(root, "SKILL.md");
+    fs.writeFileSync(skillMdPath, renderSkillMd(activeRules, version), "utf-8");
+
+    return { ok: true, value: { skillRoot: root, ruleFiles, skillMdPath } };
+  } catch (err) {
+    if (isErrnoException(err) && err.code !== undefined && UNWRITABLE_CODES.has(err.code)) {
+      return { ok: false, error: { kind: "unwritable", cause: err } };
+    }
+    // Anything else (out of disk, unexpected) is also treated as unwritable so
+    // callers' "skip silently" intent is preserved — but the cause is carried
+    // through, so a caller that wants to log it can.
+    return {
+      ok: false,
+      error: {
+        kind: "unwritable",
+        cause: isErrnoException(err)
+          ? err
+          : Object.assign(new Error(err instanceof Error ? err.message : String(err)), { code: "EUNKNOWN" }),
+      },
+    };
   }
-
-  const activeRules = getActiveRules();
-  const ruleFiles: string[] = [];
-  for (const rule of activeRules) {
-    const filePath = path.join(rulesDir, `${rule.id}.md`);
-    fs.writeFileSync(filePath, ruleToMarkdown(rule), "utf-8");
-    ruleFiles.push(filePath);
-  }
-
-  const skillMdPath = path.join(root, "SKILL.md");
-  fs.writeFileSync(skillMdPath, renderSkillMd(activeRules, getVersion()), "utf-8");
-
-  return { skillRoot: root, ruleFiles, skillMdPath };
 }
 
 /** Stamp file recording which registry `version` the installed skills currently reflect. */
@@ -125,12 +183,14 @@ export function selfSync(): {
   for (const scope of ["project", "global"] as const) {
     const dir = getApplySkillDir(scope);
     if (!fs.existsSync(dir)) continue; // only refresh already-installed scopes
-    try {
-      syncSkill(dir);
+    const r = syncSkill(dir);
+    if (r.ok) {
       if (!scopes.includes(dir)) scopes.push(dir);
-    } catch {
-      // Skip unwritable scopes.
+    } else if (r.error.kind === "invalid-registry") {
+      // Don't silently swallow registry corruption — surface it on stderr.
+      console.error(`[tomek-rules] self-sync: registry invalid — ${r.error.message}`);
     }
+    // "unwritable" scopes are intentionally skipped (no log noise).
   }
 
   fs.mkdirSync(getDataHome(), { recursive: true });
