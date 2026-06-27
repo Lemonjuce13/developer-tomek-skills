@@ -23,10 +23,11 @@ import { ruleToMarkdown } from "./markdown.js";
 import { syncSkill } from "./sync.js";
 import { buildTomekStylePrompt } from "./prompts.js";
 import { getApplySkillDir } from "./paths.js";
+import { MCP_SERVER_NAME } from "./names.js";
 
 /** Instantiate, register all tools and prompts, and return the server. */
 export function createServer(): McpServer {
-  const server = new McpServer({ name: "tomek-rules", version: "0.1.0" });
+  const server = new McpServer({ name: MCP_SERVER_NAME, version: "0.1.0" });
 
   // ── Tool: get_tomek_paradigms ────────────────────────────────────────────────
   server.registerTool(
