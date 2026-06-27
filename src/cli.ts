@@ -25,6 +25,7 @@ import {
   SKILL_APPLY,
   SKILL_CONFIG,
 } from "./paths.js";
+import { PACKAGE_NAME } from "./config.js";
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -55,7 +56,7 @@ function isLocalInstall(): boolean {
 function serveInvocation(local: boolean): string[] {
   return local
     ? ["node", SELF_PATH, "serve"]
-    : ["npx", "-y", "tomek-rules-mcp", "serve"];
+    : ["npx", "-y", PACKAGE_NAME, "serve"];
 }
 
 // ---------------------------------------------------------------------------
@@ -64,11 +65,11 @@ function serveInvocation(local: boolean): string[] {
 
 function printUsage(): void {
   console.log(`
-tomek-rules-mcp — MCP server + Claude skills for @developertomek's TypeScript idioms
+${PACKAGE_NAME} — MCP server + Claude skills for @developertomek's TypeScript idioms
 
 Usage:
-  npx tomek-rules-mcp            Install everything (skills + MCP server) — one command
-  tomek-rules-mcp <command> [flags]
+  npx ${PACKAGE_NAME}            Install everything (skills + MCP server) — one command
+  ${PACKAGE_NAME} <command> [flags]
 
 Commands:
   (no command)         Run the installer (same as 'init')
@@ -83,13 +84,13 @@ Init flags (non-interactive / headless):
   --global             Install into ~/.claude/skills
   --yes                Register the MCP server without prompting
   --local              Register the locally-built entry (node dist/cli.js serve)
-  --npx                Register the published package (npx -y tomek-rules-mcp serve)
+  --npx                Register the published package (npx -y ${PACKAGE_NAME} serve)
                        (default: auto-detected from where this CLI is running)
 
 Examples:
-  npx tomek-rules-mcp
-  npx tomek-rules-mcp --all --global --yes
-  npx tomek-rules-mcp sync
+  npx ${PACKAGE_NAME}
+  npx ${PACKAGE_NAME} --all --global --yes
+  npx ${PACKAGE_NAME} sync
 `);
 }
 
@@ -160,7 +161,7 @@ function printSuccess(opts: {
   skillsDir: string;
 }): void {
   const { scope, installedSkills, skillsDir } = opts;
-  console.log("\n✔ tomek-rules-mcp installed successfully\n");
+  console.log(`\n✔ ${PACKAGE_NAME} installed successfully\n`);
   console.log(`  Scope       : ${scope}`);
   console.log(`  Skills dir  : ${skillsDir}`);
   if (installedSkills.length > 0) {
@@ -173,7 +174,7 @@ function printSuccess(opts: {
   console.log(`  1. Ensure the MCP server is registered (see command above).`);
   console.log(`  2. In Claude Code, use /tomek-rules to apply active idioms.`);
   console.log(`  3. Use /tomek-rules-config to toggle rules on/off.`);
-  console.log(`  4. Run \`tomek-rules-mcp sync\` after editing data/rules.json.\n`);
+  console.log(`  4. Run \`${PACKAGE_NAME} sync\` after editing data/rules.json.\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +277,7 @@ async function runInitInteractive(local: boolean): Promise<void> {
   const clack = await import("@clack/prompts");
   const { syncSkill } = await import("./sync.js");
 
-  clack.intro("tomek-rules-mcp installer");
+  clack.intro(`${PACKAGE_NAME} installer`);
 
   // 1. Which skills?
   const skillsAnswer = await clack.multiselect({
